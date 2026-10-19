@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dublin Sign Field</title>
+<meta name="theme-color" content="#14322b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: full-screen map, top toolbar, bottom sheet for nearby / details */
+:root{
+  --ink:#14322b; --paper:#f6f7f4; --panel:#ffffff; --line:#d9ded8; --muted:#5d6b66; --accent:#0f7a5c;
+  --c-reg:#c8102e; --c-warn:#f2b705; --c-school:#9acd32; --c-guide:#0b7a3b; --c-info:#1f5fa8;
+  --c-om:#ff7a00; --c-custom:#8e44ad; --c-unk:#7f8c8d; --me:#1a73e8;
+  --font: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{--ink:#e6efe9;--paper:#0f1714;--panel:#18231f;--line:#2c3a35;--muted:#9fb0a9;--accent:#3fc29a;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.4 var(--font);color:var(--ink);background:var(--paper);overflow:hidden}
+#map{position:absolute;inset:0}
+.bar{position:absolute;z-index:1000;left:0;right:0;top:0;display:flex;gap:8px;align-items:center;
+  padding:calc(8px + env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-right,0px)) 8px max(10px,env(safe-area-inset-left,0px));
+  background:linear-gradient(var(--panel),color-mix(in srgb,var(--panel) 85%,transparent));border-bottom:1px solid var(--line)}
+.bar input{flex:1;min-width:0;font:inherit;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink)}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:9px 11px;white-space:nowrap}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{position:absolute;z-index:1000;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0px));
+  background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--muted);box-shadow:0 2px 8px #0002;max-width:92vw;text-align:center}
+.fab{position:absolute;z-index:1000;right:max(12px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:8px;
+  bottom:calc(var(--sheet-h,120px) + 12px)}
+.fab button{width:48px;height:48px;padding:0;border-radius:50%;box-shadow:0 2px 8px #0003;font-size:20px;display:grid;place-items:center}
+.fab button.on{background:var(--me);color:#fff;border-color:var(--me)}
+.sheet{position:absolute;z-index:1001;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);
+  border-radius:16px 16px 0 0;box-shadow:0 -4px 16px #0002;max-height:42vh;display:flex;flex-direction:column;
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+.sheet .grab{padding:8px max(14px,env(safe-area-inset-left,0px)) 6px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.sheet .grab::before{content:"";position:absolute;left:50%;top:5px;width:40px;height:4px;border-radius:2px;background:var(--line);transform:translateX(-50%)}
+.sheet h2{font-size:15px;margin:6px 0 0;flex:1}
+.sheet .body{overflow:auto;padding:0 max(14px,env(safe-area-inset-left,0px)) 12px max(14px,env(safe-area-inset-right,0px))}
+.sheet.collapsed .body{display:none}
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);cursor:pointer}
+.row:first-child{border-top:0}
+.code{font:600 13px var(--mono);padding:3px 7px;border-radius:6px;color:#fff;min-width:54px;text-align:center}
+.code.warn,.code.school{color:#111}
+.meta{min-width:0}
+.meta b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta span{color:var(--muted);font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dist{font:13px var(--mono);color:var(--muted);text-align:right}
+.done{color:var(--accent);font-weight:600}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0}
+dt{color:var(--muted);font-size:13px}
+dd{margin:0;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:13px;display:flex;align-items:center;gap:6px;background:var(--paper)}
+.chip input{margin:0}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.seg button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+textarea{width:100%;font:inherit;min-height:64px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.muted{color:var(--muted);font-size:13px}
+#btnSync{position:relative}
+#btnSync.busy{opacity:.6;pointer-events:none}
+.badge{position:absolute;top:-4px;right:-4px;width:12px;height:12px;border-radius:50%;background:#e8590c;border:2px solid var(--panel)}
+.status.alert{color:var(--ink);border-color:#e8590c;cursor:pointer}
+.leaflet-tooltip.lbl{background:transparent;border:0;box-shadow:none;font:600 11px var(--mono);color:#111;text-shadow:0 0 3px #fff,0 0 3px #fff;padding:0}
+.leaflet-tooltip.lbl::before{display:none}
+.leaflet-top{top:calc(60px + env(safe-area-inset-top,0px))}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="bar">
+  <input id="q" type="search" placeholder="Filter: R1-1, TD1, Park, street…" autocomplete="off">
+  <button id="btnSync" aria-label="Sync sign inventory">Sync<span class="badge" id="syncBadge" hidden></span></button>
+  <button id="btnFilter" aria-label="Layers and filters">Filters</button>
+</div>
+<div class="status" id="status">Opening saved sign data…</div>
+
+<div class="fab">
+  <button id="btnFollow" title="Follow my location" aria-label="Follow my location">◎</button>
+  <button id="btnBase" title="Switch basemap" aria-label="Switch basemap">▦</button>
+</div>
+
+<section class="sheet" id="sheet">
+  <div class="grab" id="grab"><h2 id="sheetTitle">Nearby signs</h2><span class="muted" id="sheetSub"></span></div>
+  <div class="body" id="sheetBody"></div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const SVC='https://services1.arcgis.com/NqY8dnPSEdMJhuRw/arcgis/rest/services/Signs/FeatureServer/21/query';
+const FIELDS='OBJECTID,FacilityID,TYPE,SIGN_IMG,Sign_Label,CONDITION,Inspected_Date,POST_TYPE,FACE_DIRECTION,COLOR,Location,LocationDesc,ROUTE,Ownership,Hyperlink,LegacyID,INTERSECTION_ID';
+const NEARBY_M=150, NEARBY_MAX=40, NOTES_KEY='dsf.notes.v1';
+
+const CATS={
+  reg:{name:'Regulatory',color:'var(--c-reg)',hex:'#c8102e'},
+  warn:{name:'Warning',color:'var(--c-warn)',hex:'#f2b705'},
+  school:{name:'School',color:'var(--c-school)',hex:'#9acd32'},
+  guide:{name:'Guide / street name',color:'var(--c-guide)',hex:'#0b7a3b'},
+  info:{name:'Info / Ohio I-series',color:'var(--c-info)',hex:'#1f5fa8'},
+  om:{name:'Object marker',color:'var(--c-om)',hex:'#ff7a00'},
+  custom:{name:'Dublin custom',color:'var(--c-custom)',hex:'#8e44ad'},
+  unk:{name:'Placeholder / unknown',color:'var(--c-unk)',hex:'#7f8c8d'},
+};
+const CUSTOM=/^(TD\d|PD\d|LID|TH\d|WAYFINDING|PARK|ANCHOR|DUB|BLOCK|BUS|NOTRES|A-HWY|HDBA|R-PARK|HISTORIC|DUBLIN|WELCOME|ENTERING|CRIME|DRIVER|ELECTRIC|NO PARKING)/i;
+function cat(t){
+  t=(t||'').trim(); const u=t.toUpperCase();
+  if(!u||/XXX/.test(u)||u==='MISS'||u==='LATER'||u==='R-OLD') return 'unk';
+  if(CUSTOM.test(u)) return 'custom';
+  if(/^OM/.test(u)) return 'om';
+  if(/^RA-/.test(u)) return 'custom';
+  if(/^R\d/.test(u)) return 'reg';
+  if(/^W+\d/.test(u)||/^RW/.test(u)) return 'warn';
+  if(/^S\d/.test(u)) return 'school';
+  if(/^(D|E|M)\d/.test(u)) return 'guide';
+  if(/^I-/.test(u)) return 'info';
+  return 'custom';
+}
+
+// ---------- state ----------
+let signs=[], markers=[], me=null, meMarker=null, meCircle=null, follow=false, selected=null;
+let activeCats=new Set(Object.keys(CATS)), onlyTodo=false;
+let notes={}; try{notes=JSON.parse(localStorage.getItem(NOTES_KEY)||'{}')}catch(e){}
+const saveNotes=()=>{try{localStorage.setItem(NOTES_KEY,JSON.stringify(notes))}catch(e){}};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const setStatus=(t,alert)=>{const s=$('status'); s.textContent=t; s.hidden=!t; s.classList.toggle('alert',!!alert); s.onclick=alert?()=>syncNow():null;};
+
+// ---------- local store (IndexedDB) ----------
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open('dublin-sign-field',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);});}
+async function idbGet(k){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('kv').objectStore('kv').get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error);});}
+async function idbSet(k,v){const db=await idb();return new Promise((res,rej)=>{const tx=db.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+let localMeta=null, remoteMeta=null, lastCheck=0;
+
+// ---------- map ----------
+const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([40.0992,-83.1141],13);
+const bases=[
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Tiles © Esri'}),
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Imagery © Esri, Maxar'})
+];
+let baseIdx=0; bases[0].addTo(map);
+$('btnBase').onclick=()=>{map.removeLayer(bases[baseIdx]);baseIdx=(baseIdx+1)%bases.length;bases[baseIdx].addTo(map);};
+const canvas=L.canvas({padding:0.3});
+const signLayer=L.layerGroup().addTo(map);
+
+// ---------- data ----------
+async function loadSigns(){
+  let all=[],off=0;
+  for(let i=0;i<20;i++){
+    const url=`${SVC}?where=1%3D1&outFields=${FIELDS}&outSR=4326&orderByFields=OBJECTID&resultOffset=${off}&resultRecordCount=2000&f=json`;
+    const r=await fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
+    if(r.error) throw new Error(r.error.message);
+    for(const f of r.features){ if(!f.geometry||f.geometry.x==null) continue; const a=f.attributes; a._lat=f.geometry.y; a._lng=f.geometry.x; a._cat=cat(a.TYPE); all.push(a);}
+    setStatus(`Downloading signs… ${all.length.toLocaleString()}`);
+    if(!r.exceededTransferLimit && r.features.length<2000) break;
+    off+=r.features.length;
+  }
+  return all;
+}
+// Lightweight check: layer's last-edit timestamp + record count (two tiny requests, no sign data)
+async function fetchRemoteMeta(){
+  const base=SVC.replace(/\/query$/,'');
+  const [info,cnt]=await Promise.all([
+    fetch(base+'?f=json',{cache:'no-store'}).then(r=>r.json()),
+    fetch(SVC+'?where=1%3D1&returnCountOnly=true&f=json',{cache:'no-store'}).then(r=>r.json())]);
+  if(info.error) throw new Error(info.error.message);
+  return {edited:info.editingInfo?.dataLastEditDate||info.editingInfo?.lastEditDate||null,count:cnt.count??null};
+}
+const sameVersion=(a,b)=>a&&b&&a.edited===b.edited&&a.count===b.count;
+function fmtWhen(t){return t?new Date(t).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'unknown';}
+function updateSyncUI(){
+  const stale=!localMeta||(remoteMeta&&!sameVersion(localMeta,remoteMeta));
+  $('syncBadge').hidden=!(remoteMeta&&stale)&&!!localMeta;
+  if(sheet.dataset.mode==='filters') $('btnFilter').click(), $('btnFilter').click();
+}
+async function checkForUpdate(manual){
+  if(!navigator.onLine){ if(manual) setStatus('You are offline. Using the sign data saved on this phone.'); return; }
+  lastCheck=Date.now();
+  try{
+    if(manual) setStatus('Checking the city server for changes…');
+    remoteMeta=await fetchRemoteMeta();
+    if(!localMeta) setStatus(`No sign data on this phone yet. Tap Sync to download ${remoteMeta.count?.toLocaleString()||''} signs.`,true);
+    else if(!sameVersion(localMeta,remoteMeta)) setStatus(`City data changed ${fmtWhen(remoteMeta.edited)}. Tap Sync to update.`,true);
+    else if(manual){ setStatus('Your sign data is up to date.'); setTimeout(()=>setStatus(''),2500); }
+  }catch(e){ if(manual) setStatus('Could not reach the city server: '+e.message); }
+  updateSyncUI();
+}
+async function syncNow(){
+  if(!navigator.onLine){ setStatus('You are offline. Connect to sync.'); return; }
+  const b=$('btnSync'); b.classList.add('busy');
+  try{
+    const meta=remoteMeta||await fetchRemoteMeta().catch(()=>({edited:null,count:null}));
+    const rows=await loadSigns();
+    localMeta={...meta,count:meta.count??rows.length,syncedAt:Date.now()};
+    remoteMeta={edited:localMeta.edited,count:localMeta.count};
+    try{ await idbSet('signs',{rows,meta:localMeta}); }catch(e){ setStatus('Downloaded, but this phone would not save it for offline use.'); }
+    signs=rows; render(); setStatus(`Synced ${rows.length.toLocaleString()} signs.`); setTimeout(()=>setStatus(''),3000);
+  }catch(e){ setStatus('Sync failed: '+e.message+'. Your saved data is unchanged.'); }
+  b.classList.remove('busy'); updateSyncUI();
+}
+$('btnSync').onclick=syncNow;
+
+function matches(s,q){
+  if(!activeCats.has(s._cat)) return false;
+  if(onlyTodo && notes[s.OBJECTID]) return false;
+  if(!q) return true;
+  return [s.TYPE,s.Sign_Label,s.Location,s.LocationDesc,s.FacilityID,s.ROUTE,s.SIGN_IMG].some(v=>v!=null&&String(v).toLowerCase().includes(q));
+}
+function render(){
+  signLayer.clearLayers(); markers=[];
+  const q=$('q').value.trim().toLowerCase(); let n=0;
+  for(const s of signs){
+    if(!matches(s,q)) continue; n++;
+    const done=!!notes[s.OBJECTID];
+    const m=L.circleMarker([s._lat,s._lng],{renderer:canvas,radius:6,weight:done?3:1.5,color:done?'#0f7a5c':'#fff',fillColor:CATS[s._cat].hex,fillOpacity:.95});
+    m.sign=s; m.on('click',()=>showSign(s)); m.addTo(signLayer); markers.push(m);
+  }
+  updateLabels();
+  setStatus(n===signs.length?'':`${n.toLocaleString()} of ${signs.length.toLocaleString()} signs shown`);
+  refreshSheet();
+}
+// code labels when zoomed in
+const labelLayer=L.layerGroup().addTo(map);
+function updateLabels(){
+  labelLayer.clearLayers();
+  if(map.getZoom()<18) return;
+  const b=map.getBounds().pad(0.1); let k=0;
+  for(const m of markers){ if(k>400) break; if(!b.contains(m.getLatLng())) continue; k++;
+    L.tooltip({permanent:true,direction:'right',offset:[6,0],className:'lbl'}).setLatLng(m.getLatLng()).setContent(esc(m.sign.TYPE||'?')).addTo(labelLayer);}
+}
+map.on('moveend zoomend',()=>{updateLabels(); if(!me) refreshSheet();});
+
+// ---------- geo ----------
+function dist(aLat,aLng,bLat,bLng){const R=6371000,r=Math.PI/180,dLat=(bLat-aLat)*r,dLng=(bLng-aLng)*r;
+  const h=Math.sin(dLat/2)**2+Math.cos(aLat*r)*Math.cos(bLat*r)*Math.sin(dLng/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+function fmtDist(m){return m<1000?`${Math.round(m*3.28084)} ft`:`${(m/1609.34).toFixed(2)} mi`;}
+function startGPS(){
+  if(!('geolocation' in navigator)){setStatus('This device has no location service. Nearby list uses the map center.');return;}
+  navigator.geolocation.watchPosition(p=>{
+    me={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};
+    const ll=[me.lat,me.lng];
+    if(!meMarker){meMarker=L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).addTo(map);
+      meCircle=L.circle(ll,{radius:me.acc,color:'#1a73e8',weight:1,fillOpacity:.08,interactive:false}).addTo(map);
+      if(!sessionStorageGet('dsf.centered')){map.setView(ll,18);sessionStorageSet('dsf.centered','1');}}
+    else{meMarker.setLatLng(ll);meCircle.setLatLng(ll).setRadius(me.acc);}
+    if(follow) map.panTo(ll,{animate:true});
+    if(!selected) refreshSheet();
+  },err=>{setStatus(err.code===1?'Location is blocked. Allow location for this site in your browser settings.':'Waiting for GPS… ('+err.message+')');},
+  {enableHighAccuracy:true,maximumAge:3000,timeout:20000});
+}
+function sessionStorageGet(k){try{return sessionStorage.getItem(k)}catch(e){return null}}
+function sessionStorageSet(k,v){try{sessionStorage.setItem(k,v)}catch(e){}}
+$('btnFollow').onclick=()=>{follow=!follow;$('btnFollow').classList.toggle('on',follow);
+  if(follow&&me){map.setView([me.lat,me.lng],Math.max(map.getZoom(),18));} else if(follow&&!me){setStatus('Waiting for GPS…');}};
+map.on('dragstart',()=>{if(follow){follow=false;$('btnFollow').classList.remove('on');}});
+
+// ---------- bottom sheet ----------
+const sheet=$('sheet'), body=$('sheetBody');
+function setSheetH(){document.documentElement.style.setProperty('--sheet-h',sheet.offsetHeight+'px');}
+$('grab').onclick=()=>{sheet.classList.toggle('collapsed');setSheetH();};
+function codeChip(s){return `<span class="code ${s._cat}" style="background:${CATS[s._cat].hex}">${esc(s.TYPE||'—')}</span>`;}
+
+function refreshSheet(){
+  if(selected||sheet.dataset.mode==='filters') return;
+  const c=me?{lat:me.lat,lng:me.lng}:{lat:map.getCenter().lat,lng:map.getCenter().lng};
+  const q=$('q').value.trim().toLowerCase();
+  const list=[];
+  for(const s of signs){ if(!matches(s,q)) continue; const d=dist(c.lat,c.lng,s._lat,s._lng); if(d<=NEARBY_M) list.push([d,s]); }
+  list.sort((a,b)=>a[0]-b[0]);
+  $('sheetTitle').textContent=me?'Nearby signs':'Signs near map center';
+  $('sheetSub').textContent=`${list.length} within ${Math.round(NEARBY_M*3.28)} ft · ${Object.keys(notes).length} checked`;
+  body.innerHTML=list.length?list.slice(0,NEARBY_MAX).map(([d,s])=>`
+    <div class="row" data-id="${s.OBJECTID}">${codeChip(s)}
+      <div class="meta"><b>${esc(s.Sign_Label||s.Location||'(no street)')}</b>
+      <span>${esc([s.FACE_DIRECTION&&('faces '+s.FACE_DIRECTION),s.POST_TYPE,s.CONDITION||'no rating'].filter(Boolean).join(' · '))}</span></div>
+      <div class="dist">${fmtDist(d)}${notes[s.OBJECTID]?`<br><span class="done">✓ ${esc(notes[s.OBJECTID].cond)}</span>`:''}</div></div>`).join('')
+    :`<p class="muted">No signs within ${Math.round(NEARBY_M*3.28)} ft${signs.length?'':' yet'}. ${me?'Walk closer or zoom the map.':'Turn on location, or pan the map.'}</p>`;
+  body.querySelectorAll('.row').forEach(r=>r.onclick=()=>{const s=signs.find(x=>x.OBJECTID==r.dataset.id); map.setView([s._lat,s._lng],Math.max(map.getZoom(),19)); showSign(s);});
+  setSheetH();
+}
+
+function showSign(s){
+  selected=s; sheet.dataset.mode='sign'; sheet.classList.remove('collapsed');
+  const n=notes[s.OBJECTID]||{};
+  const d=me?fmtDist(dist(me.lat,me.lng,s._lat,s._lng)):'';
+  $('sheetTitle').innerHTML=`${codeChip(s)} <span style="margin-left:6px">${esc(CATS[s._cat].name)}</span>`;
+  $('sheetSub').textContent=d?d+' away':'';
+  const insp=s.Inspected_Date?new Date(s.Inspected_Date).toLocaleDateString():'—';
+  const rows=[['Label',s.Sign_Label],['Street',s.Location],['Description',s.LocationDesc],['Faces',s.FACE_DIRECTION],['Post',s.POST_TYPE],['Post color',s.COLOR],
+    ['City condition',s.CONDITION||'—'],['Last inspected',insp],['Symbol file',s.SIGN_IMG],['Route',s.ROUTE],['Owner',s.Ownership],['Facility ID',s.FacilityID],['Object ID',s.OBJECTID]]
+    .filter(r=>r[1]!=null&&r[1]!=='');
+  const link=/^https?:/.test(s.Hyperlink||'')?`<a href="${esc(s.Hyperlink)}" target="_blank" rel="noopener">SignAgent record</a>`:'';
+  body.innerHTML=`
+    <dl>${rows.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    <div class="muted">${link} ${link?'· ':''}<a href="https://www.google.com/maps/dir/?api=1&destination=${s._lat},${s._lng}" target="_blank" rel="noopener">Directions</a> · ${s._lat.toFixed(6)}, ${s._lng.toFixed(6)}</div>
+    <h3 style="font-size:14px;margin:14px 0 4px">Field check</h3>
+    <div class="seg" id="condSeg">${['Good','Fair','Poor','Missing','Damaged','Obstructed','Wrong type'].map(c=>`<button data-c="${c}" class="${n.cond===c?'sel':''}">${c}</button>`).join('')}</div>
+    <label class="muted" for="obsType">Observed sign code / legend (if different or custom)</label>
+    <input id="obsType" style="width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);margin:4px 0 8px" value="${esc(n.obs||'')}" placeholder="e.g. R1-1 30&quot;, or &quot;Park Hours 11x17&quot;">
+    <textarea id="noteTxt" placeholder="Notes: fading, leaning post, graffiti, vegetation…">${esc(n.note||'')}</textarea>
+    <div class="actions">
+      <button class="primary" id="saveNote">Save check</button>
+      ${n.cond?'<button id="clearNote">Clear</button>':''}
+      <button id="backBtn">Back to nearby</button>
+    </div>
+    ${n.at?`<p class="muted">Saved ${new Date(n.at).toLocaleString()}${n.lat?` at ${n.lat.toFixed(5)}, ${n.lng.toFixed(5)} (±${Math.round(n.acc)} m)`:''}</p>`:''}`;
+  let cond=n.cond||'';
+  body.querySelectorAll('#condSeg button').forEach(b=>b.onclick=()=>{cond=b.dataset.c;body.querySelectorAll('#condSeg button').forEach(x=>x.classList.toggle('sel',x===b));});
+  $('saveNote').onclick=()=>{ if(!cond){setStatus('Pick a condition first.');return;}
+    notes[s.OBJECTID]={cond,obs:$('obsType').value.trim(),note:$('noteTxt').value.trim(),at:Date.now(),...(me?{lat:me.lat,lng:me.lng,acc:me.acc}:{})};
+    saveNotes(); setStatus(`Saved check for ${s.TYPE||'sign'} #${s.OBJECTID}`); setTimeout(()=>setStatus(''),2500); back(); render(); };
+  const cl=$('clearNote'); if(cl) cl.onclick=()=>{delete notes[s.OBJECTID];saveNotes();back();render();};
+  $('backBtn').onclick=back;
+  setSheetH();
+}
+function back(){selected=null;sheet.dataset.mode='';refreshSheet();}
+
+// ---------- filters / export ----------
+$('btnFilter').onclick=()=>{
+  if(sheet.dataset.mode==='filters'){back();return;}
+  selected=null; sheet.dataset.mode='filters'; sheet.classList.remove('collapsed');
+  $('sheetTitle').textContent='Filters & data'; $('sheetSub').textContent='';
+  const counts={}; signs.forEach(s=>counts[s._cat]=(counts[s._cat]||0)+1);
+  body.innerHTML=`
+    <div class="chips">${Object.entries(CATS).map(([k,c])=>`<label class="chip"><input type="checkbox" data-k="${k}" ${activeCats.has(k)?'checked':''}><span class="dot" style="background:${c.hex}"></span>${c.name} <span class="muted">${(counts[k]||0).toLocaleString()}</span></label>`).join('')}</div>
+    <div class="chips"><label class="chip"><input type="checkbox" id="todo" ${onlyTodo?'checked':''}>Hide signs I've already checked</label></div>
+    <div class="actions">
+      <button id="onlyCustom">Only Dublin custom + placeholders</button>
+      <button id="allCats">Show all</button>
+    </div>
+    <h3 style="font-size:14px;margin:16px 0 4px">My field checks</h3>
+    <p class="muted">${Object.keys(notes).length} signs checked on this device. Checks stay on this phone until you export them.</p>
+    <div class="actions"><button class="primary" id="exportCsv">Export CSV</button></div>
+    <h3 style="font-size:14px;margin:16px 0 4px">Sign inventory on this phone</h3>
+    <dl>
+      <dt>Signs saved</dt><dd>${signs.length.toLocaleString()}</dd>
+      <dt>Last synced</dt><dd>${localMeta?fmtWhen(localMeta.syncedAt):'never'}</dd>
+      <dt>City data as of</dt><dd>${localMeta?fmtWhen(localMeta.edited):'—'}</dd>
+      <dt>City server now</dt><dd>${remoteMeta?`${fmtWhen(remoteMeta.edited)} · ${remoteMeta.count?.toLocaleString()} signs ${sameVersion(localMeta,remoteMeta)?'(same)':'<b>(changed)</b>'}`:'not checked'}</dd>
+    </dl>
+    <div class="actions"><button id="checkUpd">Check for update</button><button class="primary" id="syncNow2">Sync now</button></div>
+    <p class="muted">The app checks for changes when it opens (a tiny request) but only downloads signs when you tap Sync. Source: City of Dublin Signs feature layer.</p>
+    <div class="actions"><button id="backBtn2">Back to nearby</button></div>`;
+  body.querySelectorAll('input[data-k]').forEach(i=>i.onchange=()=>{i.checked?activeCats.add(i.dataset.k):activeCats.delete(i.dataset.k);render();});
+  $('todo').onchange=e=>{onlyTodo=e.target.checked;render();};
+  $('onlyCustom').onclick=()=>{activeCats=new Set(['custom','unk']);$('btnFilter').click();$('btnFilter').click();render();};
+  $('allCats').onclick=()=>{activeCats=new Set(Object.keys(CATS));$('btnFilter').click();$('btnFilter').click();render();};
+  $('exportCsv').onclick=exportCsv; $('backBtn2').onclick=back;
+  $('checkUpd').onclick=()=>checkForUpdate(true); $('syncNow2').onclick=syncNow;
+  setSheetH();
+};
+function exportCsv(){
+  const head=['OBJECTID','FacilityID','TYPE','Category','Sign_Label','Location','City_CONDITION','Field_Condition','Observed_Code_or_Legend','Notes','Checked_At','Sign_Lat','Sign_Lng','Inspector_Lat','Inspector_Lng','GPS_Accuracy_m'];
+  const q=v=>{v=v==null?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const byId=new Map(signs.map(s=>[String(s.OBJECTID),s]));
+  const lines=[head.join(',')];
+  for(const [id,n] of Object.entries(notes)){const s=byId.get(id)||{};
+    lines.push([id,s.FacilityID,s.TYPE,s._cat?CATS[s._cat].name:'',s.Sign_Label,s.Location,s.CONDITION,n.cond,n.obs,n.note,new Date(n.at).toISOString(),s._lat,s._lng,n.lat,n.lng,n.acc&&Math.round(n.acc)].map(q).join(','));}
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const fname=`dublin_sign_checks_${new Date().toISOString().slice(0,10)}.csv`;
+  const file=new File([blob],fname,{type:'text/csv'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file],title:fname}).catch(()=>dl());} else dl();
+  function dl(){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);}
+}
+
+$('q').addEventListener('input',()=>{clearTimeout(window._qt);window._qt=setTimeout(render,250);});
+
+// ---------- boot ----------
+(async()=>{
+  setSheetH(); startGPS();
+  try{ const saved=await idbGet('signs'); if(saved&&saved.rows){ signs=saved.rows; localMeta=saved.meta; } }catch(e){}
+  render();
+  if(!signs.length) setStatus(navigator.onLine?'No sign data on this phone yet. Tap Sync to download.':'No sign data saved yet. Connect to the internet and tap Sync.',navigator.onLine);
+  updateSyncUI();
+  checkForUpdate(false);
+})();
+// re-check (not download) when coming back online or back to the app, at most every 10 minutes
+window.addEventListener('online',()=>checkForUpdate(false));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastCheck>600000) checkForUpdate(false);});
+if('serviceWorker' in navigator && location.protocol==='https:'){navigator.serviceWorker.register('sw.js').catch(()=>{});}
+window.addEventListener('resize',setSheetH);
+</script>
+</body>
+</html>
