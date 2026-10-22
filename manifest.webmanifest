@@ -1,15 +1,22 @@
 {
-  "name": "Dublin Sign Field",
-  "short_name": "Sign Field",
-  "description": "Field inspection map of the City of Dublin, OH sign inventory with live GPS.",
-  "start_url": "./index.html",
-  "scope": "./",
-  "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#14322b",
-  "theme_color": "#14322b",
-  "icons": [
-    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
-    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
-  ]
+ "name": "Sign Inventory - Dublin test drive",
+ "short_name": "Dublin Signs",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "orientation": "any",
+ "background_color": "#1f2937",
+ "theme_color": "#1f2937",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  }
+ ]
 }
