@@ -361,7 +361,6 @@ function condFilterRow() {
   return `<div class="legend-hint">Toggle to show/hide signs of each condition.</div>` +
     `<div class="cond-filter">` +
     STATES.map(s => `<button class="cfbtn ${activeStates.has(s) ? "on" : ""}" onclick="toggleCond('${s}', this)">${s}</button>`).join("") +
-    (GIS.length ? `<button class="cfbtn ${gisVis ? "on" : ""}" onclick="setGis(this.classList.toggle('on'))">GIS</button>` : "") +
     `</div>`;
 }
 
@@ -412,6 +411,9 @@ viewControl.onAdd = () => {
       radio("basemap", "satellite", "Satellite", true, "setBase") +
       radio("basemap", "road", "Road map", false, "setBase") +
       `<label class="panel-opt"><input type="checkbox" checked onchange="setTracks(this.checked)"> Drive tracks</label>` +
+      (GIS.length ? `<label class="panel-opt" title="City of Dublin sign inventory records near the route">` +
+        `<input type="checkbox" checked onchange="setGis(this.checked)"> ` +
+        `<span style="display:inline-block;width:10px;height:10px;background:${GIS_COLOR};vertical-align:-1px"></span> GIS</label>` : "") +
       (SIGNS.some(x => x.facing === "other") ?
         `<label class="panel-opt" title="Signs meant for drivers on another road (dashed ring)"><input type="checkbox" checked onchange="setOtherRoad(this.checked)"> Other-road signs</label>` : "") +
     `</div>` +
@@ -502,10 +504,7 @@ function renderLegend() {
       STATES.map(s =>
         `<label style="cursor:pointer"><input type="checkbox" ${activeStates.has(s) ? "checked" : ""} ` +
         `onchange="toggleState('${s}',this.checked)"> <i style="background:${STATE_COLOR[s]}"></i>${s}</label>`
-      ).join("<br>") +
-      (GIS.length ? `<br><label style="cursor:pointer" title="City of Dublin sign inventory records near the route">` +
-        `<input type="checkbox" ${gisVis ? "checked" : ""} onchange="setGis(this.checked)"> ` +
-        `<i style="background:${GIS_COLOR};border-radius:0"></i>GIS</label>` : "");
+      ).join("<br>");
   }
   html += `<br>` + ioButtons() + `<br><button onclick="showHelp()" style="margin-top:4px">Help</button>` +
     `<div class="legend-version">${APP_VERSION}</div>`;
@@ -559,7 +558,7 @@ helpOverlay.innerHTML = `<div class="help-modal">
       again to stop following, a third time to turn it off. The blue dot's halo is the GPS accuracy.</li>
     <li><b>Lines</b> = the two drives' GPS tracks (toggle with <b>Drive tracks</b>).</li>
     <li><b>Blue squares</b> = the City of Dublin's official sign inventory (GIS) near the route: filled = route
-      "Dublin Rd", hollow = route field empty (to be decided). Toggle with the <b>GIS</b> row; click one for its record.</li>
+      "Dublin Rd", hollow = route field empty (to be decided). Toggle with <b>GIS</b> in the top-right panel; click one for its record.</li>
     <li><b>Dashed dark ring</b> = a sign meant for drivers on <i>another</i> road (e.g. a cross street's stop
       sign seen while passing). Street-name blades that drivers on this road read count as this road. Toggle
       them with <b>Other-road signs</b>; change it per sign with the <b>Meant for</b> menu in the popup.</li>
