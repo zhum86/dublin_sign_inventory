@@ -339,11 +339,7 @@ function signItem(s) {
       `onchange="onType('${s.id}',this.value,this)"></div>` +
     `<div class="edit-row"><span class="popup-meta">Condition</span>` + condSelect(s) + `</div>` +
     `<div class="edit-row"><label class="popup-meta" style="cursor:pointer"><input type="checkbox" ` +
-      `${isRejected(s) ? "checked" : ""} onchange="onReject('${s.id}',this.checked)"> Not a sign?</label></div>` +
-    `<div class="edit-row"><span class="popup-meta">Meant for</span>` +
-      `<select class="facing-select" onchange="onFacing('${s.id}',this.value)">` +
-      ["this", "other"].map(f => `<option value="${f}" ${f === facingOf(s) ? "selected" : ""}>${f} road</option>`).join("") +
-      `</select></div>` +
+      `${isRejected(s) ? "checked" : ""} onchange="onReject('${s.id}',this.checked)"> Not an owner?</label></div>` +
   `</div>`;
 }
 function groupPopup(g) {
@@ -631,14 +627,13 @@ helpOverlay.innerHTML = `<div class="help-modal">
       <b>GIS (route: Dublin Rd)</b> and <b>GIS (route: null, nearby)</b> in the top-right panel; click one for its record.</li>
     <li><b>Dashed dark ring</b> = a sign meant for drivers on <i>another</i> road (e.g. a cross street's stop
       sign seen while passing). Street-name blades that drivers on this road read count as this road. Toggle
-      them with <b>Other-road signs</b>; change it per sign with the <b>Meant for</b> menu in the popup.</li>
+      them with <b>Other-road signs</b>; (other-road signs are left out of this map).</li>
   </ul>
 
   <h3>Top-right panel</h3>
   <ul>
     <li><b>Base map</b> — Satellite or Road map.</li>
-    <li><b>Show</b> — the two GIS groups, and ${swatch("reject")}<b>Rejected signs</b> (ticked <b>Not a sign?</b>: not a sign or a
-      detection mistake; hidden by default).</li>
+    <li><b>Show</b> — the two GIS groups, and ${swatch("reject")}<b>Rejected signs</b> (ticked <b>Not an owner?</b>; hidden by default).</li>
     <li><b>Color signs by: Condition</b> — ${swatch("todo")}<b>todo</b> (not reviewed) and ${swatch("good")}<b>good</b>,
       plus up to two face issues (see below).</li>
     <li><b>Color signs by: Type</b> — pick up to three types (searchable) to highlight in
@@ -669,7 +664,7 @@ helpOverlay.innerHTML = `<div class="help-modal">
       how many photos the sign appears in, and the detector's confidence.</li>
     <li>The <b>type box</b> holds the suggested type. Type or pick a new one to correct it (it turns blue
       when changed). The <b>Condition</b> menu holds the face condition: <b>Good</b>, one of the issue phrases, or todo.
-      It starts at the automatic (VLM) evaluation. Tick <b>Not a sign?</b> to reject a detection.</li>
+      It starts at the automatic (VLM) evaluation. Tick <b>Not an owner?</b> to reject it.</li>
   </ul>
 
   <h3>Export / Import / Reset</h3>
