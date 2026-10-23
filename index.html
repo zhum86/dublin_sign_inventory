@@ -555,7 +555,6 @@ function renderLegend() {
       `<select id="issuesel${k}" class="type-input" onchange="setIssueSel(${k}, this.value)"></select></div>`;
     html = `<b>Color by condition</b><div class="legend-hint">Uncheck to hide from map</div>` +
       stateRow("todo", "Todo") + stateRow("good", "Good") +
-      `<div class="legend-hint">Pick up to 2 face issues.</div>` +
       issueRow(0) + issueRow(1) + stateRow("issue", "Other issues");
   }
   html += `<br>` + ioButtons() + `<br><button onclick="showHelp()" style="margin-top:4px">Help</button>` +
