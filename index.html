@@ -124,11 +124,7 @@ function setBase(which) {
   else { map.removeLayer(roadmap); map.addLayer(satellite); }
 }
 
-// Drive tracks
-const TRACK_COLORS = ["#22d3ee", "#e879f9"];
-const trackLayer = L.layerGroup(TRACKS.map((t, i) =>
-  L.polyline(t.points, { color: TRACK_COLORS[i % 2], weight: 3, opacity: 0.8 }).bindTooltip(t.name, { sticky: true })
-)).addTo(map);
+// Drive tracks are not drawn; their points only set the initial map extent.
 function setOtherRoad(on) { otherRoadVis = on; applyFilter(); }
 // ---- Live location (for field checks) -----------------------------------------
 // Tap once: show my position and follow it. Tap again (or pan the map): stop following, keep showing.
@@ -202,7 +198,6 @@ document.body.appendChild(locateMsg);
 map.on("dragstart", () => { if (follow) { follow = false; setLocateUi(); } });
 setLocateUi();
 
-function setTracks(on) { on ? map.addLayer(trackLayer) : map.removeLayer(trackLayer); }
 
 function arrowSvg(deg, color) {
   if (deg == null) return "";
@@ -215,8 +210,15 @@ function arrowSvg(deg, color) {
 }
 
 // ---- Review edits (persisted in the browser) --------------------------------
-const STATES = ["todo", "good", "review", "replace", "reject"];
-const STATE_COLOR = { todo: "#9e9e9e", good: "#2ca25f", review: "#f59e0b", replace: "#e6194b", reject: "#111827" };
+const STATES = ["todo", "good", "reject"];
+const STATE_COLOR = { todo: "#9e9e9e", good: "#2ca25f", reject: "#111827" };
+// Condition filter: Todo / Good rows, plus up to two face issues picked from the detected ones.
+const ISSUE_COLORS = ["#f97316", "#a21caf"];
+const ALL_ISSUES = [...new Set(SIGNS.flatMap(s => s.issues || []))].sort();
+const issueSel = [null, null], issueVis = [true, true];
+function issuesOf(s) { return s.issues || []; }
+// Issue slots (0/1) whose selected issue this sign has.
+function issueSlots(s) { return [0, 1].filter(k => issueSel[k] && issuesOf(s).includes(issueSel[k])); }
 const STORAGE_KEY = "dublinSignEdits2";  // v2: review baked in from sign_map_dublin_small_edits.json
 let edits = loadEdits();
 const activeStates = new Set(STATES.filter(s => s !== "reject"));  // rejected signs hidden by default
@@ -230,7 +232,10 @@ function loadEdits() {
   return out;
 }
 function saveEdits() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(edits)); } catch (e) {} }
-function stateOf(s) { return (edits[s.id] && edits[s.id].state) || s.state || "todo"; }
+function stateOf(s) {
+  const st = (edits[s.id] && edits[s.id].state) || s.state || "todo";
+  return STATE_COLOR[st] ? st : "todo";  // older review/replace states count as todo
+}
 function facingOf(s) { const e = edits[s.id]; return (e && e.facing) || s.facing || "this"; }
 function typeOf(s) { const e = edits[s.id]; return (e && e.type != null) ? e.type : (s.type || ""); }
 function setEdit(id, key, val) { (edits[id] = edits[id] || {})[key] = val; saveEdits(); }
@@ -264,7 +269,9 @@ function buildIcon(colors, n, otherRoad) {
 }
 function shownSigns(g) {
   return g.signs.filter(s => {
-    if (!activeStates.has(stateOf(s))) return false;
+    const st = stateOf(s);
+    if (st === "reject") { if (!activeStates.has("reject")) return false; }
+    else if (!activeStates.has(st) && !issueSlots(s).some(k => issueVis[k])) return false;
     if (!otherRoadVis && facingOf(s) === "other") return false;
     if (colorMode !== "type") return true;
     const k = typeSel.indexOf(typeOf(s));
@@ -278,8 +285,12 @@ function iconFor(g) {
     for (let k = 0; k < 3; k++) if (typeVis[k] && typeSel[k] && shown.some(s => typeOf(s) === typeSel[k])) cols.push(TYPE_COLORS[k]);
     return buildIcon(cols, g.signs.length, shown.every(s => facingOf(s) === "other"));
   }
-  const present = STATES.filter(st => shown.some(s => stateOf(s) === st));
-  return buildIcon(present.map(st => STATE_COLOR[st]), g.signs.length, shown.every(s => facingOf(s) === "other"));
+  // An issue colour wins over the state colour; otherwise todo/good/reject.
+  const cols = [];
+  for (let k = 0; k < 2; k++) if (issueVis[k] && shown.some(s => issueSlots(s).includes(k))) cols.push(ISSUE_COLORS[k]);
+  for (const st of STATES)
+    if (shown.some(s => stateOf(s) === st && !issueSlots(s).some(k => issueVis[k]))) cols.push(STATE_COLOR[st]);
+  return buildIcon(cols, g.signs.length, shown.every(s => facingOf(s) === "other"));
 }
 
 function condSelect(s) {
@@ -365,12 +376,13 @@ function toggleState(s, on) { on ? activeStates.add(s) : activeStates.delete(s);
 function condFilterRow() {
   return `<div class="legend-hint">Toggle to show/hide signs of each condition.</div>` +
     `<div class="cond-filter">` +
-    STATES.map(s => `<button class="cfbtn ${activeStates.has(s) ? "on" : ""}" onclick="toggleCond('${s}', this)">${s}</button>`).join("") +
+    ["todo", "good"].map(s => `<button class="cfbtn ${activeStates.has(s) ? "on" : ""}" onclick="toggleCond('${s}', this)">${s}</button>`).join("") +
     `</div>`;
 }
 
 // ---- City GIS inventory (a separate class, drawn as squares) -----------------
-let gisVis = true;
+const gisVis = { keep: true, decide: true };
+const gisKind = p => (p.status || "").startsWith("keep") ? "keep" : "decide";
 function gisIcon(p) {
   // Filled = route "Dublin Rd"; hollow = route field empty (to be decided).
   const keep = (p.status || "").startsWith("keep");
@@ -386,12 +398,14 @@ function gisPopup(p) {
     row("Facing", p.FACE_DIRECTION) + row("Condition", p.CONDITION) + row("Location", p.Location) +
     row("Facility ID", p.FacilityID) + row("Object ID", p.OBJECTID) + row("To route", p.dist_to_route_m + " m") + `</table>` + link;
 }
-const gisLayer = L.layerGroup(GIS.map(f => {
+const gisLayers = { keep: L.layerGroup(), decide: L.layerGroup() };
+for (const f of GIS) {
   const [lon, lat] = f.geometry.coordinates;
-  return L.marker([lat, lon], { icon: gisIcon(f.properties), zIndexOffset: -100 }).bindPopup(gisPopup(f.properties), { maxWidth: 320 });
-}));
-if (GIS.length) gisLayer.addTo(map);
-function setGis(on) { gisVis = on; on ? map.addLayer(gisLayer) : map.removeLayer(gisLayer); }
+  L.marker([lat, lon], { icon: gisIcon(f.properties), zIndexOffset: -100 })
+    .bindPopup(gisPopup(f.properties), { maxWidth: 320 }).addTo(gisLayers[gisKind(f.properties)]);
+}
+for (const k in gisLayers) gisLayers[k].addTo(map);
+function setGis(kind, on) { gisVis[kind] = on; on ? map.addLayer(gisLayers[kind]) : map.removeLayer(gisLayers[kind]); }
 function toggleCond(s, btn) { const on = btn.classList.toggle("on"); on ? activeStates.add(s) : activeStates.delete(s); applyFilter(); }
 
 // Type suggestions: the shipped list plus every type currently in use.
@@ -415,10 +429,17 @@ viewControl.onAdd = () => {
     `<div class="panel-title">Base map</div><div class="panel-group">` +
       radio("basemap", "satellite", "Satellite", true, "setBase") +
       radio("basemap", "road", "Road map", false, "setBase") +
-      `<label class="panel-opt"><input type="checkbox" checked onchange="setTracks(this.checked)"> Drive tracks</label>` +
-      (GIS.length ? `<label class="panel-opt" title="City of Dublin sign inventory records near the route">` +
-        `<input type="checkbox" checked onchange="setGis(this.checked)"> ` +
-        `<span style="display:inline-block;width:10px;height:10px;background:${GIS_COLOR};vertical-align:-1px"></span> GIS</label>` : "") +
+    `</div>` +
+    `<div class="panel-title">Show</div><div class="panel-group">` +
+      (GIS.length ? `<label class="panel-opt" title="City GIS records whose route is Dublin Rd">` +
+        `<input type="checkbox" checked onchange="setGis('keep',this.checked)"> ` +
+        `<span style="display:inline-block;width:10px;height:10px;background:${GIS_COLOR};vertical-align:-1px"></span> GIS (route: Dublin Rd)</label>` +
+        `<label class="panel-opt" title="City GIS records near the route with an empty route field">` +
+        `<input type="checkbox" checked onchange="setGis('decide',this.checked)"> ` +
+        `<span style="display:inline-block;width:8px;height:8px;border:1px solid ${GIS_COLOR};background:#fff;vertical-align:-1px"></span> GIS (route: null, nearby)</label>` : "") +
+      `<label class="panel-opt" title="Signs set to reject (not a sign / detection mistake)">` +
+        `<input type="checkbox" ${activeStates.has("reject") ? "checked" : ""} onchange="toggleState('reject',this.checked)"> ` +
+        `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${STATE_COLOR.reject};vertical-align:-1px"></span> Reject</label>` +
       (SIGNS.some(x => x.facing === "other") ?
         `<label class="panel-opt" title="Signs meant for drivers on another road (dashed ring)"><input type="checkbox" checked onchange="setOtherRoad(this.checked)"> Other-road signs</label>` : "") +
     `</div>` +
@@ -452,13 +473,21 @@ function statBlock(label, c, color) {
   const dot = color ? `<i style="background:${color}"></i>` : "";
   const part = s => `<b style="color:${STATE_COLOR[s]}">${c[s]}</b> ${s}`;
   return `<div class="stat-block"><div class="stat-head">${dot}${esc(label)} &middot; ${c.total}</div>` +
-    `<div class="stat-line">${part("good")} / ${part("review")} / ${part("replace")}<br>${part("todo")} / ${part("reject")}</div></div>`;
+    `<div class="stat-line">${part("todo")} / ${part("good")} / ${part("reject")}</div></div>`;
 }
 function updateStats() {
   const el = document.getElementById("stats-body");
   if (!el) return;
   let html = "";
-  if (colorMode === "condition") html = statBlock("All detected signs", countSigns(null), null);
+  if (colorMode === "condition") {
+    html = statBlock("All detected signs", countSigns(null), null);
+    const withIssue = SIGNS.filter(s => issuesOf(s).length).length;
+    html += `<div class="stat-block"><div class="stat-line"><b>${withIssue}</b> with a face issue</div></div>`;
+    for (let k = 0; k < 2; k++) if (issueSel[k]) {
+      const n = SIGNS.filter(s => issuesOf(s).includes(issueSel[k])).length;
+      html += `<div class="stat-block"><div class="stat-head"><i style="background:${ISSUE_COLORS[k]}"></i>${esc(issueSel[k])} &middot; ${n}</div></div>`;
+    }
+  }
   else {
     const chosen = new Set(typeSel.filter(Boolean));
     for (let k = 0; k < 3; k++)
@@ -505,17 +534,38 @@ function renderLegend() {
       `onchange="setOtherVis(this.checked)"><i style="background:${TYPE_OTHER}"></i>Other</div>` +
       condFilterRow();
   } else {
-    html = `<b>Color by condition</b><br><div class="legend-hint">Uncheck to hide from map</div>` +
-      STATES.map(s =>
-        `<label style="cursor:pointer"><input type="checkbox" ${activeStates.has(s) ? "checked" : ""} ` +
-        `onchange="toggleState('${s}',this.checked)"> <i style="background:${STATE_COLOR[s]}"></i>${s}</label>`
-      ).join("<br>");
+    const stateRow = (s, label) =>
+      `<div class="type-row"><input type="checkbox" ${activeStates.has(s) ? "checked" : ""} ` +
+      `onchange="toggleState('${s}',this.checked)"><i style="background:${STATE_COLOR[s]}"></i>${label}</div>`;
+    const issueRow = k =>
+      `<div class="type-row"><input type="checkbox" title="Show on map" ${issueVis[k] ? "checked" : ""} ` +
+      `onchange="setIssueVis(${k}, this.checked)"><i style="background:${ISSUE_COLORS[k]}"></i>` +
+      `<input list="allissues${k}" class="type-input" placeholder="Issue ${k + 1} (none)" value="${esc(issueSel[k] || "")}" ` +
+      `oninput="setIssueSel(${k}, this.value)"><datalist id="allissues${k}"></datalist></div>`;
+    html = `<b>Color by condition</b><div class="legend-hint">Uncheck to hide from map</div>` +
+      stateRow("todo", "Todo") + stateRow("good", "Good") +
+      `<div class="legend-hint">Pick up to 2 face issues &mdash; type to search.</div>` +
+      issueRow(0) + issueRow(1);
   }
   html += `<br>` + ioButtons() + `<br><button onclick="showHelp()" style="margin-top:4px">Help</button>` +
     `<div class="legend-version">${APP_VERSION}</div>`;
   legendDiv.innerHTML = html;
-  if (colorMode === "type") refreshDatalists();
+  if (colorMode === "type") refreshDatalists(); else refreshIssueLists();
 }
+// Each issue slot lists the detected issues except the one chosen in the other slot.
+function refreshIssueLists(except) {
+  for (let k = 0; k < 2; k++) {
+    if (k === except) continue;
+    const dl = document.getElementById("allissues" + k);
+    if (dl) dl.innerHTML = ALL_ISSUES.filter(t => t !== issueSel[1 - k]).map(t => `<option value="${esc(t)}">`).join("");
+  }
+}
+function setIssueSel(k, val) {
+  val = (val || "").trim();
+  issueSel[k] = (ALL_ISSUES.includes(val) && issueSel[1 - k] !== val) ? val : null;
+  applyFilter(); refreshIssueLists(k); updateStats();
+}
+function setIssueVis(k, on) { issueVis[k] = on; applyFilter(); updateStats(); }
 function refreshDatalists(except) {
   for (let k = 0; k < 3; k++) {
     if (k === except) continue;
@@ -561,9 +611,9 @@ helpOverlay.innerHTML = `<div class="help-modal">
       is split into vertical stripes.</li>
     <li><b>&#10148; button</b> (top left, below zoom) = your live location: tap once to show and follow it,
       again to stop following, a third time to turn it off. The blue dot's halo is the GPS accuracy.</li>
-    <li><b>Lines</b> = the two drives' GPS tracks (toggle with <b>Drive tracks</b>).</li>
     <li><b>Blue squares</b> = the City of Dublin's official sign inventory (GIS) near the route: filled = route
-      "Dublin Rd", hollow = route field empty (to be decided). Toggle with <b>GIS</b> in the top-right panel; click one for its record.</li>
+      "Dublin Rd", hollow = route field empty but near the route (to be decided). Toggle each with
+      <b>GIS (route: Dublin Rd)</b> and <b>GIS (route: null, nearby)</b> in the top-right panel; click one for its record.</li>
     <li><b>Dashed dark ring</b> = a sign meant for drivers on <i>another</i> road (e.g. a cross street's stop
       sign seen while passing). Street-name blades that drivers on this road read count as this road. Toggle
       them with <b>Other-road signs</b>; change it per sign with the <b>Meant for</b> menu in the popup.</li>
@@ -571,10 +621,11 @@ helpOverlay.innerHTML = `<div class="help-modal">
 
   <h3>Top-right panel</h3>
   <ul>
-    <li><b>Base map</b> — Satellite or Road map, and the drive tracks on/off.</li>
-    <li><b>Color signs by: Condition</b> — ${swatch("todo")}<b>todo</b> (not reviewed),
-      ${swatch("good")}<b>good</b>, ${swatch("review")}<b>review</b>, ${swatch("replace")}<b>replace</b>,
-      ${swatch("reject")}<b>reject</b> (not a sign / detection mistake; hidden by default).</li>
+    <li><b>Base map</b> — Satellite or Road map.</li>
+    <li><b>Show</b> — the two GIS groups, and ${swatch("reject")}<b>Reject</b> (signs set to reject: not a sign or a
+      detection mistake; hidden by default).</li>
+    <li><b>Color signs by: Condition</b> — ${swatch("todo")}<b>todo</b> (not reviewed) and ${swatch("good")}<b>good</b>,
+      plus up to two face issues (see below).</li>
     <li><b>Color signs by: Type</b> — pick up to three types (searchable) to highlight in
       <span class="help-swatch" style="background:#f97316"></span>orange,
       <span class="help-swatch" style="background:#1d4ed8"></span>blue and
@@ -584,7 +635,11 @@ helpOverlay.innerHTML = `<div class="help-modal">
 
   <h3>Bottom-right controls</h3>
   <ul>
-    <li><b>Condition mode</b> — a checkbox per state hides or shows those signs.</li>
+    <li><b>Condition mode</b> — <b>Todo</b> and <b>Good</b> checkboxes, then <b>Issue 1</b> and <b>Issue 2</b>: pick a
+      detected face issue (e.g. "Faded legend / sheeting") to colour those signs
+      <span class="help-swatch" style="background:#f97316"></span>orange or
+      <span class="help-swatch" style="background:#a21caf"></span>purple. Uncheck Todo and Good to see only the
+      signs with the chosen issues.</li>
     <li><b>Type mode</b> — checkboxes beside each selected type and <b>Other</b>, plus a row of condition
       toggles; a sign shows only when both its type and its condition are on.</li>
     <li><b>Statistics</b> — counts over all detected signs, by condition (and by selected type).</li>
