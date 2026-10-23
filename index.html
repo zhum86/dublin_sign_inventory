@@ -110,15 +110,18 @@ let otherVis = true;
 let otherRoadVis = true;                     // show signs meant for another road?
 
 // Base layers (no API key; OpenStreetMap blocks pages opened from a file)
+// maxNativeZoom = deepest level Esri has real tiles for here (street map 19, imagery 21); beyond it Leaflet
+// enlarges those tiles instead of requesting blank "Map data not yet available" ones.
+const MAX_ZOOM = 22;
 const roadmap = L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
-  { maxZoom: 19, attribution: "Tiles &copy; Esri" }
+  { maxZoom: MAX_ZOOM, maxNativeZoom: 19, attribution: "Tiles &copy; Esri" }
 );
 const satellite = L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-  { maxZoom: 19, attribution: "Tiles &copy; Esri" }
+  { maxZoom: MAX_ZOOM, maxNativeZoom: 21, attribution: "Tiles &copy; Esri" }
 );
-const map = L.map("map", { layers: [satellite], maxZoom: 21 });
+const map = L.map("map", { layers: [satellite], maxZoom: MAX_ZOOM });
 function setBase(which) {
   if (which === "road") { map.removeLayer(satellite); map.addLayer(roadmap); }
   else { map.removeLayer(roadmap); map.addLayer(satellite); }
